@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "Registered user account on Xrivet WormGPT",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "lastLoginAt": { "type": "number" },
+        "loginCount": { "type": "number" }
+      },
+      "required": ["id", "username", "passwordHash", "createdAt"]
+    },
+    "appConfig": {
+      "title": "AppConfig",
+      "description": "Global administration configuration for prompts and announcements",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "prompt": { "type": "string" },
+        "announcementEnabled": { "type": "boolean" },
+        "announcementText": { "type": "string" },
+        "announcementBadge": { "type": "string" },
+        "announcementLink": { "type": "string" },
+        "announcementLinkText": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["key", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "Collection of all registered user profiles and login stats"
+    },
+    "/system_config/{configId}": {
+      "schema": "appConfig",
+      "description": "Global system configuration document for prompt and announcements"
+    },
+    "/user_searches/{searchId}": {
+      "description": "Historical chat logs and user search queries"
+    }
+  }
+}

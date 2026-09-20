@@ -1,0 +1,6 @@
+{
+  "name": "Xrivet WormGPT",
+  "description": "Xrivet WormGPT - Advanced conversational AI web application with unrestricted uncensored intelligence.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
