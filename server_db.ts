@@ -278,3 +278,35 @@ export async function loadAllLearnedKnowledgeFromFirestore(): Promise<Record<str
     return {};
   }
 }
+
+export async function syncUserSessionsToFirestore(userId: string, sessions: any[]): Promise<void> {
+  const db = getFirebaseDb();
+  try {
+    const cleanSessions = sanitizeForFirestore(sessions);
+    await setDoc(doc(db, "user_sessions", userId), {
+      userId,
+      sessions: cleanSessions,
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (err) {
+    console.error(`Firestore save sessions error for ${userId}:`, err);
+  }
+}
+
+export async function loadUserSessionsFromFirestore(userId: string): Promise<any[]> {
+  const db = getFirebaseDb();
+  if (!db || !userId) return [];
+  try {
+    const docRef = doc(db, "user_sessions", userId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return Array.isArray(data?.sessions) ? data.sessions : [];
+    }
+    return [];
+  } catch (err) {
+    console.error(`Firestore load sessions error for ${userId}:`, err);
+    return [];
+  }
+}
+

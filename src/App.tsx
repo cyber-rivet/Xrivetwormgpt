@@ -207,14 +207,56 @@ export default function App() {
           localStorage.setItem('xrivet_user', JSON.stringify(userData));
         }
       });
+
+      // Load cloud sessions for user
+      const token = localStorage.getItem('xrivet_token') || currentUser.id;
+      fetch(`/api/sessions?userId=${currentUser.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.sessions) && data.sessions.length > 0) {
+              setSessions((prev) => {
+                // Merge cloud sessions with local
+                const existingIds = new Set(prev.map(s => s.id));
+                const newFromCloud = data.sessions.filter((s: ChatSession) => !existingIds.has(s.id));
+                if (newFromCloud.length > 0) {
+                  return [...prev, ...newFromCloud];
+                }
+                return prev;
+              });
+            }
+          }
+        })
+        .catch(() => {});
+
       return () => unsubscribe();
     }
   }, [currentUser?.id]);
 
-  // Save sessions to localStorage whenever they change
+  // Save sessions to localStorage & Cloud Firestore whenever they change
   useEffect(() => {
     saveStoredSessions(sessions);
-  }, [sessions]);
+
+    if (currentUser?.id) {
+      const token = localStorage.getItem('xrivet_token') || currentUser.id;
+      const timeout = setTimeout(() => {
+        fetch('/api/sessions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            userId: currentUser.id,
+            sessions
+          })
+        }).catch(() => {});
+      }, 1000);
+      return () => clearTimeout(timeout);
+    }
+  }, [sessions, currentUser?.id]);
 
   // Save active session id
   useEffect(() => {

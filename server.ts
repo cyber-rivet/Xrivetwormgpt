@@ -19,6 +19,8 @@ import {
   syncLearnedKnowledgeToFirestore,
   deleteLearnedKnowledgeFromFirestore,
   loadAllLearnedKnowledgeFromFirestore,
+  syncUserSessionsToFirestore,
+  loadUserSessionsFromFirestore,
   FirestoreKnowledgeItem
 } from "./server_db.js";
 
@@ -2438,6 +2440,39 @@ EXECUTE THE CYBER-ROAST PROTOCOL IMMEDIATELY:
     });
   }
 });
+
+// ==========================================
+// USER CHAT SESSIONS (CLOUD FIRESTORE PERSISTENCE)
+// ==========================================
+app.get("/api/sessions", async (req, res) => {
+  try {
+    const actingUser = getAuthenticatedUser(req);
+    const userId = actingUser ? actingUser.id : (typeof req.query.userId === 'string' ? req.query.userId : null);
+    if (!userId) {
+      return res.json({ success: true, sessions: [] });
+    }
+    const sessions = await loadUserSessionsFromFirestore(userId);
+    return res.json({ success: true, sessions });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to load sessions" });
+  }
+});
+
+app.post("/api/sessions", async (req, res) => {
+  try {
+    const actingUser = getAuthenticatedUser(req);
+    const userId = actingUser ? actingUser.id : req.body.userId;
+    const sessions = req.body.sessions;
+    if (!userId || !Array.isArray(sessions)) {
+      return res.status(400).json({ success: false, error: "userId and sessions array required" });
+    }
+    await syncUserSessionsToFirestore(userId, sessions);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save sessions" });
+  }
+});
+
 
 // ==========================================
 // DEDICATED AI AGENT CODER ENDPOINT (ANSH DEEPSEEK V4 FLASH)
