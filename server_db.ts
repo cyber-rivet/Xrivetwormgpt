@@ -18,18 +18,33 @@ import path from "path";
 let dbInstance: any = null;
 let isInitialized = false;
 
+// Hardcoded safe fallback config from firebase-applet-config.json
+const FALLBACK_FIREBASE_CONFIG = {
+  projectId: "lucky-quota-chh41",
+  appId: "1:1010117210567:web:2c6edce4f50a09b22b29e2",
+  apiKey: "AIzaSyD3EuLGT32Sme9LvYmSC3n3NVNbOlnWEbM",
+  authDomain: "lucky-quota-chh41.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-notrackaichat-231a7122-f7a4-4bb8-8f33-147d495472ce",
+  storageBucket: "lucky-quota-chh41.firebasestorage.app",
+  messagingSenderId: "1010117210567"
+};
+
 // Load Firebase configuration
 export function getFirebaseDb() {
   if (dbInstance) return dbInstance;
 
   try {
-    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-    if (!fs.existsSync(configPath)) {
-      console.warn("firebase-applet-config.json not found, falling back to local storage");
-      return null;
+    let config = FALLBACK_FIREBASE_CONFIG;
+    try {
+      const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, "utf-8");
+        config = { ...FALLBACK_FIREBASE_CONFIG, ...JSON.parse(raw) };
+      }
+    } catch {
+      // Use fallback
     }
 
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     const firebaseConfig = {
       apiKey: config.apiKey,
       authDomain: config.authDomain,
@@ -44,7 +59,6 @@ export function getFirebaseDb() {
     
     dbInstance = getFirestore(app, databaseId);
     isInitialized = true;
-    console.log("Firebase Firestore initialized successfully with database:", databaseId);
     return dbInstance;
   } catch (err) {
     console.error("Failed to initialize Firebase Firestore:", err);
@@ -62,6 +76,13 @@ export interface FirestoreUser {
   loginCount: number;
   deviceInfo?: any;
   lastKnownIp?: string;
+  credits?: number;
+  isPremium?: boolean;
+  subscriptionExpiresAt?: number;
+  referralCode?: string;
+  referredBy?: string;
+  referralCount?: number;
+  registeredDeviceId?: string;
 }
 
 export interface FirestoreSystemConfig {
@@ -74,38 +95,43 @@ export interface FirestoreSystemConfig {
   updatedAt?: number;
 }
 
-// Helper to remove any undefined fields before sending to Firestore
-export function sanitizeForFirestore<T>(data: T): T {
-  if (data === null || data === undefined) {
-    return null as any;
-  }
-  if (Array.isArray(data)) {
-    return data.map(sanitizeForFirestore) as any;
-  }
-  if (typeof data === "object" && !(data instanceof Date)) {
-    const cleaned: Record<string, any> = {};
-    for (const [key, value] of Object.entries(data)) {
-      if (value !== undefined) {
-        cleaned[key] = sanitizeForFirestore(value);
-      }
-    }
-    return cleaned as any;
-  }
-  return data;
+export interface FirestoreKnowledgeItem {
+  id: string;
+  topic: string;
+  questionPattern: string;
+  refinedAnswer: string;
+  category: 'General' | 'Coding' | 'Security' | 'How-To' | 'Troubleshooting' | 'Architecture' | 'FAQ';
+  sourceQuery?: string;
+  sourceQueryId?: string;
+  confidenceScore: number;
+  timesApplied: number;
+  createdAt: number;
+  updatedAt: number;
+  status: 'active' | 'draft' | 'archived';
 }
 
-// 1. User Account Operations
+function sanitizeForFirestore(obj: any): any {
+  if (obj === undefined) return null;
+  if (obj === null) return null;
+  if (typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeForFirestore);
+  const clean: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      clean[key] = sanitizeForFirestore(val);
+    }
+  }
+  return clean;
+}
+
 export async function syncUserToFirestore(user: FirestoreUser): Promise<void> {
   const db = getFirebaseDb();
   if (!db) return;
   try {
-    const payload = sanitizeForFirestore({
-      ...user,
-      updatedAt: Date.now()
-    });
-    await setDoc(doc(db, "users", user.id), payload, { merge: true });
+    const cleanUser = sanitizeForFirestore(user);
+    await setDoc(doc(db, "users", user.id), cleanUser, { merge: true });
   } catch (err) {
-    console.error(`Firestore save user error (${user.username}):`, err);
+    console.error(`Firestore save user error (${user.id}):`, err);
   }
 }
 
@@ -128,29 +154,28 @@ export async function loadAllUsersFromFirestore(): Promise<Record<string, Firest
     const usersMap: Record<string, FirestoreUser> = {};
     snapshot.forEach((d) => {
       const data = d.data() as FirestoreUser;
-      if (data && data.id && data.username) {
+      if (data && data.id) {
         usersMap[data.id] = data;
       }
     });
     return usersMap;
   } catch (err) {
-    console.error("Firestore load users error:", err);
+    console.error("Firestore load all users error:", err);
     return {};
   }
 }
 
-// 2. Global System Config (Prompt & Announcement) Operations
 export async function syncSystemConfigToFirestore(config: FirestoreSystemConfig): Promise<void> {
   const db = getFirebaseDb();
   if (!db) return;
   try {
-    const payload = sanitizeForFirestore({
+    const cleanConfig = sanitizeForFirestore({
       ...config,
       updatedAt: Date.now()
     });
-    await setDoc(doc(db, "system_config", "global"), payload, { merge: true });
+    await setDoc(doc(db, "system", "config"), cleanConfig, { merge: true });
   } catch (err) {
-    console.error("Firestore save system config error:", err);
+    console.error("Firestore save config error:", err);
   }
 }
 
@@ -158,85 +183,56 @@ export async function loadSystemConfigFromFirestore(): Promise<FirestoreSystemCo
   const db = getFirebaseDb();
   if (!db) return null;
   try {
-    const docRef = doc(db, "system_config", "global");
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      return snap.data() as FirestoreSystemConfig;
+    const docRef = doc(db, "system", "config");
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as FirestoreSystemConfig;
     }
+    return null;
   } catch (err) {
-    console.error("Firestore load system config error:", err);
+    console.error("Firestore load config error:", err);
+    return null;
   }
-  return null;
 }
 
-// 3. User Search & Chat Query Log Operations
-export interface UserSearchLog {
-  id: string;
-  userId: string;
-  username: string;
-  userName: string;
-  query: string;
-  response?: string;
-  responsePreview?: string;
-  timestamp: number;
-  deviceInfo?: any;
-  status?: 'raw' | 'trained' | 'optimized';
-  trainedKnowledgeId?: string;
-  optimizedAnswer?: string;
-}
-
-export async function saveUserSearchLog(log: UserSearchLog): Promise<void> {
+export async function saveUserSearchLog(log: Record<string, any>): Promise<void> {
   const db = getFirebaseDb();
   if (!db) return;
   try {
-    const payload = sanitizeForFirestore({
-      ...log
+    const logId = log.id || ("log_" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6));
+    const cleanLog = sanitizeForFirestore({
+      ...log,
+      id: logId,
+      timestamp: log.timestamp || Date.now()
     });
-    await setDoc(doc(db, "user_searches", log.id), payload);
+    await setDoc(doc(db, "search_logs", logId), cleanLog, { merge: true });
   } catch (err) {
-    console.error(`Firestore save search log error:`, err);
+    console.error("Firestore save search log error:", err);
   }
 }
 
-export async function getUserSearchLogs(userId?: string): Promise<UserSearchLog[]> {
+export async function getUserSearchLogs(userId?: string): Promise<any[]> {
   const db = getFirebaseDb();
   if (!db) return [];
   try {
-    const colRef = collection(db, "user_searches");
-    // Always use a simple fetch in fallback mode first to guarantee data retrieval even if indexes are missing
-    const q = query(colRef, limit(300));
+    const colRef = collection(db, "search_logs");
+    let q;
+    if (userId) {
+      q = query(colRef, where("userId", "==", userId), limit(100));
+    } else {
+      q = query(colRef, limit(200));
+    }
     const snapshot = await getDocs(q);
-    const logs: UserSearchLog[] = [];
+    const logs: any[] = [];
     snapshot.forEach((d) => {
-      const item = d.data() as UserSearchLog;
-      // Filter in memory for maximum reliability
-      if (!userId || item.userId === userId) {
-        logs.push({ ...item, id: d.id });
-      }
+      logs.push(d.data());
     });
-    // Sort in memory by timestamp descending
     logs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    return logs.slice(0, 150);
+    return logs;
   } catch (err) {
     console.error("Firestore get search logs error:", err);
     return [];
   }
-}
-
-// 4. Learned Knowledge Base & Q&A Training Operations
-export interface FirestoreKnowledgeItem {
-  id: string;
-  topic: string;
-  questionPattern: string;
-  refinedAnswer: string;
-  category: string;
-  sourceQuery?: string;
-  sourceQueryId?: string;
-  confidenceScore: number;
-  timesApplied: number;
-  createdAt: number;
-  updatedAt: number;
-  status: 'active' | 'draft' | 'archived';
 }
 
 export async function syncLearnedKnowledgeToFirestore(item: FirestoreKnowledgeItem): Promise<void> {
