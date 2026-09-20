@@ -444,10 +444,25 @@ export default function App() {
         throw new Error(data.error || `Server error: ${res.status}`);
       }
 
+      let extractedContent = '';
+      if (typeof data.content === 'string') {
+        extractedContent = data.content;
+      } else if (typeof data.message === 'string') {
+        extractedContent = data.message;
+      } else if (data.message && typeof data.message.content === 'string') {
+        extractedContent = data.message.content;
+      } else if (typeof data.response === 'string') {
+        extractedContent = data.response;
+      } else if (data.content && typeof data.content.text === 'string') {
+        extractedContent = data.content.text;
+      } else {
+        extractedContent = String(data.content || data.message || '');
+      }
+
       const assistantMessage: ChatMessage = {
         id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
         role: 'assistant',
-        content: data.content || data.message || '',
+        content: extractedContent,
         timestamp: Date.now(),
         verifiedLinks: Array.isArray(data.verifiedLinks) && data.verifiedLinks.length > 0 ? data.verifiedLinks : undefined,
         searchSources: Array.isArray(data.sources) && data.sources.length > 0 ? data.sources : undefined

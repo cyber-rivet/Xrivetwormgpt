@@ -134,6 +134,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
   }, [activeTab, selectedUserForHistory]);
 
+  const safeJson = async (res: Response) => {
+    try {
+      const text = await res.text();
+      return JSON.parse(text);
+    } catch {
+      return { success: false, error: `Server returned unexpected response (${res.status})` };
+    }
+  };
+
   const fetchGlobalPrompt = async (pass: string) => {
     try {
       const res = await fetch('/api/admin/prompt', {
@@ -142,7 +151,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         }
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await safeJson(res);
         setPromptText(data.prompt || '');
         setIsCustom(Boolean(data.isCustom));
       } else {
@@ -165,16 +174,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         }
       });
       if (res.ok) {
-        const data: AdminUserStats = await res.json();
-        setUserStats(data);
-
-        // Also save a copy to local storage cache so it's never lost
-        try {
-          if (Array.isArray(data.users) && data.users.length > 0) {
-            localStorage.setItem('xrivet_backup_users_cache', JSON.stringify(data.users));
+        const data = await safeJson(res);
+        if (data && typeof data === 'object' && Array.isArray(data.users)) {
+          setUserStats(data as AdminUserStats);
+          try {
+            if (data.users.length > 0) {
+              localStorage.setItem('xrivet_backup_users_cache', JSON.stringify(data.users));
+            }
+          } catch {
+            // Ignore
           }
-        } catch {
-          // Ignore
         }
       }
     } catch (err: any) {
@@ -458,7 +467,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         body: JSON.stringify({ password: password.trim() })
       });
 
-      const data = await res.json();
+      const data = await safeJson(res);
       if (res.ok && data.success) {
         setIsAuthenticated(true);
         setSavedPassword(password.trim());

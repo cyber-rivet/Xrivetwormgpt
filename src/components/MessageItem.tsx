@@ -48,18 +48,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [copiedLinkUrl, setCopiedLinkUrl] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState(message.content);
+  const safeContent = typeof message.content === 'string' ? message.content : (message.content ? JSON.stringify(message.content) : '');
+  const [editText, setEditText] = useState(safeContent);
   const [hasPlayedMeme, setHasPlayedMeme] = useState(false);
   const [activeMemeVideo, setActiveMemeVideo] = useState<string | null>(null);
 
   const isUser = message.role === 'user';
 
   // Parse meme tags
-  const memeMatch = !isUser ? message.content.match(/\[PLAY_MEME:([a-zA-Z0-9_]+)\]/) : null;
-  let displayContent = message.content;
+  const memeMatch = !isUser ? safeContent.match(/\[PLAY_MEME:([a-zA-Z0-9_]+)\]/) : null;
+  let displayContent = safeContent;
   
   if (memeMatch) {
-    displayContent = message.content.replace(memeMatch[0], '').trim();
+    displayContent = safeContent.replace(memeMatch[0], '').trim();
   }
 
   React.useEffect(() => {
