@@ -6,7 +6,6 @@ import dns from "dns";
 import { promises as dnsPromises } from "dns";
 import net from "net";
 import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
 import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -295,15 +294,19 @@ function isAuthorizedAdmin(pass: any): boolean {
 
 app.use(express.json({ limit: "10mb" }));
 
+// In serverless / Vercel environment, storage directory must be /tmp or memory
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const DATA_DIR = IS_VERCEL ? "/tmp" : process.cwd();
+
 // Admin prompt storage file
-const CONFIG_FILE = path.join(process.cwd(), "admin_config.json");
+const CONFIG_FILE = path.join(DATA_DIR, "admin_config.json");
 // Users database files (primary + backup for durability)
-const USERS_FILE = path.join(process.cwd(), "users_db.json");
-const USERS_BACKUP_FILE = path.join(process.cwd(), "users_backup.json");
+const USERS_FILE = path.join(DATA_DIR, "users_db.json");
+const USERS_BACKUP_FILE = path.join(DATA_DIR, "users_backup.json");
 // Live announcement / ad config file
-const ANNOUNCEMENT_FILE = path.join(process.cwd(), "announcement_config.json");
+const ANNOUNCEMENT_FILE = path.join(DATA_DIR, "announcement_config.json");
 // Learned Q&A Knowledge Base file
-const KNOWLEDGE_FILE = path.join(process.cwd(), "knowledge_db.json");
+const KNOWLEDGE_FILE = path.join(DATA_DIR, "knowledge_db.json");
 
 interface UserRecord {
   id: string;
@@ -3329,8 +3332,14 @@ app.post("/api/v1/chat/completions", async (req, res) => {
 });
 
 async function startServer() {
+  // If running on Vercel or in serverless context, don't boot standalone server or dev middleware
+  if (process.env.VERCEL) {
+    return;
+  }
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
@@ -3347,12 +3356,9 @@ async function startServer() {
     });
   }
 
-  // Only start listening if run directly (not as a serverless function)
-  if (!process.env.VERCEL) {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
-    });
-  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
 }
 
 startServer();
